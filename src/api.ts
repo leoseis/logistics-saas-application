@@ -2,7 +2,7 @@ import type { Status, Vendor } from './types'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api'
 type ApiStatus = 'active' | 'inactive' | 'pending'
-type ApiVendor = { id:string; name:string; business_type:string; owner_name:string; phone:string; email:string; address:string; status:ApiStatus; order_count:number }
+export type ApiVendor = { id:string; name:string; business_type:string; owner_name:string; phone:string; email:string; address:string; status:ApiStatus; order_count:number; created_at?:string; updated_at?:string }
 type Page<T> = { count:number; next:string|null; previous:string|null; results:T[] }
 export type VendorDashboard = { total_vendors:number; active_vendors:number; inactive_vendors:number; pending_vendors:number; pending:ApiVendor[] }
 
@@ -22,3 +22,4 @@ export function getVendors({page, query, status, signal}:{page:number;query:stri
  return request<Page<ApiVendor>>(`/vendors/?${params}`,signal).then(pageData=>({count:pageData.count,results:pageData.results.map(toVendor)}))
 }
 export function getVendorDashboard(signal?:AbortSignal){ return request<VendorDashboard>('/dashboard/vendors/',signal) }
+export function getVendor(id:string, signal?:AbortSignal){ return request<ApiVendor>(`/vendors/${id}/`,signal).then(toVendor) }

@@ -17,6 +17,14 @@ test('loads vendors from the API', async()=>{
  expect(await screen.findByText('Maple & Main')).toBeInTheDocument()
  expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/vendors/'),expect.any(Object))
 })
+test('opens vendor details from a row action', async()=>{
+ render(<App />)
+ await screen.findByText('Maple & Main')
+ fireEvent.click(screen.getByLabelText('Vendor actions'))
+ fireEvent.click(screen.getByText('View details'))
+ expect(await screen.findByRole('dialog', {name:'Vendor details'})).toBeInTheDocument()
+ expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/vendors/vendor-1/'),expect.any(Object))
+})
 test('persists theme selection',()=>{
  render(<App />)
  fireEvent.click(screen.getByLabelText('Toggle theme'))
