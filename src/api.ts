@@ -33,3 +33,7 @@ export function createVendor(payload:VendorCreateInput){
 export function updateVendor(id:string, payload:VendorCreateInput){
  return request<ApiVendor>(`/vendors/${id}/`, undefined, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) }).then(toVendor)
 }
+export async function deleteVendor(id:string){
+ const response = await fetch(`${API_BASE}/vendors/${id}/`, { method:'DELETE', headers:{Accept:'application/json'} })
+ if(!response.ok) throw new Error(`API request failed (${response.status})`)
+}
