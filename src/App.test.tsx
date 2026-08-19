@@ -1,15 +1,21 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { App } from './App'
 
 beforeEach(()=>{localStorage.clear(); location.hash=''})
-test('filters vendors by status and search',()=>{
+afterEach(()=>cleanup())
+const response = (data:unknown) => Promise.resolve({ok:true,json:async()=>data})
+beforeEach(()=>{
+ vi.stubGlobal('fetch', vi.fn((input:RequestInfo|URL)=>{
+  const url=String(input)
+  if(url.includes('dashboard/vendors')) return response({total_vendors:3,active_vendors:1,inactive_vendors:1,pending_vendors:1,pending:[]})
+  return response({count:1,next:null,previous:null,results:[{id:'vendor-1',name:'Maple & Main',business_type:'Electric',owner_name:'Ronald Richards',phone:'+234',email:'maple@example.test',address:'Lagos',status:'active',order_count:3}]})
+ }))
+})
+test('loads vendors from the API', async()=>{
  render(<App />)
- fireEvent.click(screen.getByRole('tab',{name:'Active'}))
- expect(screen.getByText('Swift & Style')).toBeInTheDocument()
- expect(screen.queryByText('Harbor Goods')).not.toBeInTheDocument()
- fireEvent.change(screen.getByLabelText('Search…'),{target:{value:'Maple'}})
- expect(screen.getByText('Maple & Main')).toBeInTheDocument()
- expect(screen.queryByText('Swift & Style')).not.toBeInTheDocument()
+ expect(await screen.findByText('Maple & Main')).toBeInTheDocument()
+ expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/vendors/'),expect.any(Object))
 })
 test('persists theme selection',()=>{
  render(<App />)

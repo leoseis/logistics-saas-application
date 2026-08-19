@@ -28,10 +28,13 @@ The project expects Python 3.10+ and uses SQLite for local development. A local 
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python backend/manage.py migrate
+.venv/bin/python backend/manage.py seed_demo
 .venv/bin/python backend/manage.py runserver
 ```
 
 The API is then available at `http://127.0.0.1:8000/api/`. CORS allows the Vite development server at `http://localhost:5173` and `http://127.0.0.1:5173`.
+
+The frontend fetches live vendor data through Vite's `/api` development proxy. Run the Django server and `seed_demo` before opening the dashboard. In a deployed build, set `VITE_API_URL` to the public API base URL (for example, `https://api.example.com/api`).
 
 To create an administrator for Django Admin:
 
