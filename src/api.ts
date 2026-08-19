@@ -30,3 +30,6 @@ export function updateVendorStatus(id:string, status:ApiStatus){
 export function createVendor(payload:VendorCreateInput){
  return request<ApiVendor>('/vendors/', undefined, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) }).then(toVendor)
 }
+export function updateVendor(id:string, payload:VendorCreateInput){
+ return request<ApiVendor>(`/vendors/${id}/`, undefined, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) }).then(toVendor)
+}
