@@ -2,6 +2,7 @@ import type { Status, Vendor } from './types'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api'
 export type ApiStatus = 'active' | 'inactive' | 'pending'
+export type VendorCreateInput = { name:string; business_type:string; owner_name:string; phone:string; email:string; address:string; status:ApiStatus }
 export type ApiVendor = { id:string; name:string; business_type:string; owner_name:string; phone:string; email:string; address:string; status:ApiStatus; order_count:number; created_at?:string; updated_at?:string }
 type Page<T> = { count:number; next:string|null; previous:string|null; results:T[] }
 export type VendorDashboard = { total_vendors:number; active_vendors:number; inactive_vendors:number; pending_vendors:number; pending:ApiVendor[] }
@@ -25,4 +26,7 @@ export function getVendorDashboard(signal?:AbortSignal){ return request<VendorDa
 export function getVendor(id:string, signal?:AbortSignal){ return request<ApiVendor>(`/vendors/${id}/`,signal).then(toVendor) }
 export function updateVendorStatus(id:string, status:ApiStatus){
  return request<ApiVendor>(`/vendors/${id}/`, undefined, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status}) }).then(toVendor)
+}
+export function createVendor(payload:VendorCreateInput){
+ return request<ApiVendor>('/vendors/', undefined, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) }).then(toVendor)
 }
