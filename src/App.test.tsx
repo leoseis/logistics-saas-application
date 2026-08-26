@@ -42,6 +42,22 @@ test('navigates to orders and opens order details',async()=>{
  expect(await screen.findByRole('dialog',{name:'Order details'})).toBeInTheDocument()
  expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/orders/order-1/'),expect.any(Object))
 })
+test('shows assigned-order transitions and marks an order as picked up',async()=>{
+ const assigned={id:'order-2',reference:'ORD-ASSIGNED',vendor:'vendor-1',vendor_name:'Maple & Main',rider:'rider-1',rider_name:'Tola Driver',rider_phone:'+23480777',rider_status:'on_delivery',pickup_address:'Lagos Island',delivery_address:'Ikeja',recipient_name:'Ada Okafor',recipient_phone:'+234801',status:'assigned',delivery_fee:'2500.00',created_at:'2026-08-20T10:00:00Z',updated_at:'2026-08-20T10:00:00Z'}
+ const pickedUp={...assigned,status:'picked_up'}
+ let wasPickedUp=false
+ vi.mocked(fetch).mockImplementation((input:RequestInfo|URL,init?:RequestInit)=>{const url=String(input);if(url.includes('/orders/order-2/')&&init?.method==='PATCH'){wasPickedUp=true;return response(pickedUp)}if(url.includes('/orders/'))return response({count:1,next:null,previous:null,results:[wasPickedUp?pickedUp:assigned]});return response({count:0,next:null,previous:null,results:[]})})
+ render(<App />)
+ fireEvent.click(screen.getByText('Orders'))
+ await screen.findByText('ORD-ASSIGNED')
+ fireEvent.click(screen.getByLabelText('Actions for order ORD-ASSIGNED'))
+ expect(screen.getByText('Mark as picked up')).toBeInTheDocument()
+ expect(screen.getByText('Cancel order')).toBeInTheDocument()
+ fireEvent.click(screen.getByText('Mark as picked up'))
+ expect(await screen.findByText('ORD-ASSIGNED was marked as picked up.')).toBeInTheDocument()
+ expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/orders/order-2/'),expect.objectContaining({method:'PATCH',body:JSON.stringify({status:'picked_up'})}))
+ expect(screen.getAllByText('Picked up').some(element=>element.classList.contains('badge'))).toBe(true)
+})
 test('creates an order with the selected vendor UUID',async()=>{
  const created={id:'order-new',reference:'ORD-NEW',vendor:'vendor-1',vendor_name:'Maple & Main',rider:null,rider_name:null,pickup_address:'Marina',delivery_address:'Ikeja',recipient_name:'Ada Okafor',recipient_phone:'+2348012345',status:'pending',delivery_fee:'1500.00',created_at:'2026-08-20T10:00:00Z',updated_at:'2026-08-20T10:00:00Z'}
  vi.mocked(fetch).mockImplementation((input:RequestInfo|URL,init?:RequestInit)=>{const url=String(input);if(url.includes('/vendors/?'))return response({count:1,next:null,previous:null,results:[{id:'vendor-1',name:'Maple & Main',status:'active'}]});if(url.includes('/riders/?'))return response({count:0,next:null,previous:null,results:[]});if(url.endsWith('/api/orders/')&&init?.method==='POST')return response(created);if(url.includes('/orders/'))return response({count:0,next:null,previous:null,results:[]});return response({count:0,next:null,previous:null,results:[]})})

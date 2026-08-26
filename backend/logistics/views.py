@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -68,7 +69,15 @@ def order_list(request):
     return paginated_response(request, orders, OrderSerializer)
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
-def order_detail(request, order_id): return resource_detail(request, get_object_or_404(Order.objects.select_related('vendor', 'rider'), id=order_id), OrderSerializer)
+def order_detail(request, order_id):
+    if request.method in ['PUT', 'PATCH']:
+        with transaction.atomic():
+            order = get_object_or_404(Order.objects.select_for_update().select_related('vendor', 'rider'), id=order_id)
+            serializer = OrderSerializer(order, data=request.data, partial=request.method == 'PATCH')
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
+    return resource_detail(request, get_object_or_404(Order.objects.select_related('vendor', 'rider'), id=order_id), OrderSerializer)
 
 @api_view(['GET'])
 def vendor_dashboard(request):
