@@ -38,11 +38,12 @@ def rider_list(request):
     if request.method == 'POST':
         serializer = RiderSerializer(data=request.data); serializer.is_valid(raise_exception=True); serializer.save(); return Response(serializer.data, status=status.HTTP_201_CREATED)
     query = request.query_params.get('q', '')
-    riders = Rider.objects.annotate(active_order_count=Count('orders', filter=Q(orders__status__in=['assigned', 'picked_up']))).filter(Q(full_name__icontains=query) | Q(phone__icontains=query)).order_by('full_name')
+    riders = Rider.objects.annotate(active_order_count=Count('orders', filter=Q(orders__status__in=['assigned', 'picked_up']))).filter(Q(full_name__icontains=query) | Q(phone__icontains=query) | Q(email__icontains=query)).order_by('full_name')
+    if value := request.query_params.get('status'): riders = riders.filter(status=value)
     return paginated_response(request, riders, RiderSerializer)
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
-def rider_detail(request, rider_id): return resource_detail(request, get_object_or_404(Rider.objects.annotate(active_order_count=Count('orders')), id=rider_id), RiderSerializer)
+def rider_detail(request, rider_id): return resource_detail(request, get_object_or_404(Rider.objects.annotate(active_order_count=Count('orders', filter=Q(orders__status__in=['assigned', 'picked_up']))), id=rider_id), RiderSerializer)
 
 @api_view(['GET', 'POST'])
 def vehicle_list(request):

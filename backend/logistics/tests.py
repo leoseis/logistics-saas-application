@@ -28,3 +28,11 @@ class LogisticsApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['results'][0]['reference'], 'ORD-SEARCH-01')
+
+    def test_searches_and_filters_riders(self):
+        Rider.objects.create(full_name='Tola Driver', phone='+23480777', email='tola@example.com', status='available')
+        Rider.objects.create(full_name='Musa Driver', phone='+23480888', email='musa@example.com', status='offline')
+        response = self.client.get('/api/riders/?q=tola@example.com&status=available')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['full_name'], 'Tola Driver')

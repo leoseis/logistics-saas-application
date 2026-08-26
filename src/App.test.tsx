@@ -60,3 +60,14 @@ test('creates an order with the selected vendor UUID',async()=>{
  expect(await screen.findByText('ORD-NEW was created successfully.')).toBeInTheDocument()
  expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/orders/'),expect.objectContaining({method:'POST',body:expect.stringContaining('"vendor":"vendor-1"')}))
 })
+test('navigates to riders and opens rider details',async()=>{
+ const rider={id:'rider-1',full_name:'Tola Driver',phone:'+23480777',email:'tola@example.com',status:'available',rating:'4.8',active_order_count:2,created_at:'2026-08-20T10:00:00Z',updated_at:'2026-08-20T10:00:00Z'}
+ vi.mocked(fetch).mockImplementation((input:RequestInfo|URL)=>String(input).includes('/riders/rider-1/')?response(rider):String(input).includes('/riders/')?response({count:1,next:null,previous:null,results:[rider]}):response({count:0,next:null,previous:null,results:[]}))
+ render(<App />)
+ fireEvent.click(screen.getByText('Riders'))
+ expect(await screen.findByText('Tola Driver')).toBeInTheDocument()
+ fireEvent.click(screen.getByLabelText('Actions for rider Tola Driver'))
+ fireEvent.click(screen.getByText('View details'))
+ expect(await screen.findByRole('dialog',{name:'Rider details'})).toBeInTheDocument()
+ expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/riders/rider-1/'),expect.any(Object))
+})
