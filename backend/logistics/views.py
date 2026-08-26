@@ -60,6 +60,8 @@ def order_list(request):
     if request.method == 'POST':
         serializer = OrderSerializer(data=request.data); serializer.is_valid(raise_exception=True); serializer.save(); return Response(serializer.data, status=status.HTTP_201_CREATED)
     orders = Order.objects.select_related('vendor', 'rider')
+    if value := request.query_params.get('q'):
+        orders = orders.filter(Q(reference__icontains=value) | Q(vendor__name__icontains=value) | Q(recipient_name__icontains=value) | Q(recipient_phone__icontains=value) | Q(pickup_address__icontains=value) | Q(delivery_address__icontains=value))
     if value := request.query_params.get('status'): orders = orders.filter(status=value)
     if value := request.query_params.get('vendor'): orders = orders.filter(vendor_id=value)
     return paginated_response(request, orders, OrderSerializer)

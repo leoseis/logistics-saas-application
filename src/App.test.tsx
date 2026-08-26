@@ -31,3 +31,14 @@ test('persists theme selection',()=>{
  expect(document.documentElement.dataset.theme).toBe('dark')
  expect(localStorage.getItem('truelog-theme')).toBe('dark')
 })
+test('navigates to orders and opens order details',async()=>{
+ const order={id:'order-1',reference:'ORD-1001',vendor:'vendor-1',vendor_name:'Maple & Main',rider:null,rider_name:null,pickup_address:'Lagos Island',delivery_address:'Ikeja',recipient_name:'Ada Okafor',recipient_phone:'+234801',status:'pending',delivery_fee:'2500.00',created_at:'2026-08-20T10:00:00Z',updated_at:'2026-08-20T10:00:00Z'}
+ vi.mocked(fetch).mockImplementation((input:RequestInfo|URL)=>String(input).includes('/orders/order-1/')?response(order):String(input).includes('/orders/')?response({count:1,next:null,previous:null,results:[order]}):response({count:0,next:null,previous:null,results:[]}))
+ render(<App />)
+ fireEvent.click(screen.getByText('Orders'))
+ expect(await screen.findByText('ORD-1001')).toBeInTheDocument()
+ fireEvent.click(screen.getByLabelText('Actions for order ORD-1001'))
+ fireEvent.click(screen.getByText('View details'))
+ expect(await screen.findByRole('dialog',{name:'Order details'})).toBeInTheDocument()
+ expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/orders/order-1/'),expect.any(Object))
+})
