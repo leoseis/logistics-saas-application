@@ -41,7 +41,7 @@ class OrderSerializer(serializers.ModelSerializer):
     rider_status = serializers.CharField(source='rider.status', read_only=True)
     class Meta:
         model = Order
-        fields = ['id', 'reference', 'vendor', 'vendor_name', 'rider', 'rider_name', 'rider_phone', 'rider_status', 'pickup_address', 'delivery_address', 'recipient_name', 'recipient_phone', 'status', 'weight_kg', 'price_per_kg', 'delivery_fee', 'created_at', 'updated_at']
+        fields = ['id', 'reference', 'vendor', 'vendor_name', 'rider', 'rider_name', 'rider_phone', 'rider_status', 'pickup_address', 'delivery_address', 'recipient_name', 'recipient_phone', 'status', 'weight_kg', 'price_per_kg', 'delivery_fee', 'package_photo', 'created_at', 'updated_at']
         read_only_fields = ['id', 'vendor_name', 'rider_name', 'rider_phone', 'rider_status', 'price_per_kg', 'delivery_fee', 'created_at', 'updated_at']
     def validate(self, attrs):
         vendor = attrs.get('vendor', getattr(self.instance, 'vendor', None))
@@ -56,6 +56,8 @@ class OrderSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'rider': 'Only an available rider can be assigned to an order.'})
         if status in [Order.Status.ASSIGNED, Order.Status.PICKED_UP] and not rider:
             raise serializers.ValidationError({'rider': 'A rider is required once an order is assigned.'})
+        if status == Order.Status.PICKED_UP and (self.instance is None or self.instance.status != Order.Status.PICKED_UP):
+            raise serializers.ValidationError({'status': 'Pickup code verification is required before marking an order as picked up.'})
         weight = attrs.get('weight_kg', getattr(self.instance, 'weight_kg', None))
         if self.instance is None and weight is None:
             raise serializers.ValidationError({'weight_kg': 'Package weight is required.'})
@@ -120,3 +122,8 @@ class OrderSerializer(serializers.ModelSerializer):
                 locked_old_rider.save(update_fields=['status', 'updated_at'])
 
         return super().update(order, validated_data)
+
+class OrderDetailSerializer(OrderSerializer):
+    class Meta(OrderSerializer.Meta):
+        fields = [*OrderSerializer.Meta.fields, 'pickup_code']
+        read_only_fields = [*OrderSerializer.Meta.read_only_fields, 'pickup_code']

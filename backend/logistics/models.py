@@ -1,10 +1,14 @@
 import uuid
+import secrets
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 
 POSITIVE_DECIMAL = Decimal('0.01')
+
+def generate_pickup_code():
+    return f'{secrets.randbelow(1_000_000):06d}'
 
 class TimeStampedModel(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -101,6 +105,8 @@ class Order(TimeStampedModel):
     # Snapshot the rate used so later configuration changes do not rewrite history.
     price_per_kg = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(POSITIVE_DECIMAL)])
     delivery_fee = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    package_photo = models.ImageField(upload_to='orders/packages/', null=True, blank=True)
+    pickup_code = models.CharField(max_length=6, unique=True, editable=False, default=generate_pickup_code)
     class Meta:
         ordering = ['-created_at']
         indexes = [models.Index(fields=['status']), models.Index(fields=['reference'])]

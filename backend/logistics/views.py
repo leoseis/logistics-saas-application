@@ -1,6 +1,7 @@
 from django.db import transaction
 from datetime import timedelta
 from decimal import Decimal
+import secrets
 from django.db.models import Avg, Count, DecimalField, Q, Sum
 from django.db.models.functions import Coalesce, TruncDate
 from django.shortcuts import get_object_or_404
@@ -10,18 +11,18 @@ from rest_framework.decorators import api_view
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from .models import Order, PricingConfiguration, Rider, Vehicle, Vendor
-from .serializers import OrderSerializer, PricingConfigurationSerializer, RiderSerializer, VehicleSerializer, VendorSerializer
+from .serializers import OrderDetailSerializer, OrderSerializer, PricingConfigurationSerializer, RiderSerializer, VehicleSerializer, VendorSerializer
 
 def paginated_response(request, queryset, serializer_class):
     paginator = PageNumberPagination()
     paginator.page_size = min(int(request.query_params.get('page_size', 20)), 100)
     page = paginator.paginate_queryset(queryset, request)
-    return paginator.get_paginated_response(serializer_class(page, many=True).data)
+    return paginator.get_paginated_response(serializer_class(page, many=True, context={'request': request}).data)
 
 def resource_detail(request, instance, serializer_class):
-    if request.method == 'GET': return Response(serializer_class(instance).data)
+    if request.method == 'GET': return Response(serializer_class(instance, context={'request': request}).data)
     if request.method == 'DELETE': instance.delete(); return Response(status=status.HTTP_204_NO_CONTENT)
-    serializer = serializer_class(instance, data=request.data, partial=request.method == 'PATCH')
+    serializer = serializer_class(instance, data=request.data, partial=request.method == 'PATCH', context={'request': request})
     serializer.is_valid(raise_exception=True); serializer.save()
     return Response(serializer.data)
 
@@ -64,7 +65,7 @@ def vehicle_detail(request, vehicle_id): return resource_detail(request, get_obj
 @api_view(['GET', 'POST'])
 def order_list(request):
     if request.method == 'POST':
-        serializer = OrderSerializer(data=request.data); serializer.is_valid(raise_exception=True); serializer.save(); return Response(serializer.data, status=status.HTTP_201_CREATED)
+        serializer = OrderSerializer(data=request.data, context={'request': request}); serializer.is_valid(raise_exception=True); serializer.save(); return Response(serializer.data, status=status.HTTP_201_CREATED)
     orders = Order.objects.select_related('vendor', 'rider')
     if value := request.query_params.get('q'):
         orders = orders.filter(Q(reference__icontains=value) | Q(vendor__name__icontains=value) | Q(recipient_name__icontains=value) | Q(recipient_phone__icontains=value) | Q(pickup_address__icontains=value) | Q(delivery_address__icontains=value))
@@ -77,11 +78,24 @@ def order_detail(request, order_id):
     if request.method in ['PUT', 'PATCH']:
         with transaction.atomic():
             order = get_object_or_404(Order.objects.select_for_update().select_related('vendor', 'rider'), id=order_id)
-            serializer = OrderSerializer(order, data=request.data, partial=request.method == 'PATCH')
+            serializer = OrderDetailSerializer(order, data=request.data, partial=request.method == 'PATCH', context={'request': request})
             serializer.is_valid(raise_exception=True)
             serializer.save()
             return Response(serializer.data)
-    return resource_detail(request, get_object_or_404(Order.objects.select_related('vendor', 'rider'), id=order_id), OrderSerializer)
+    return resource_detail(request, get_object_or_404(Order.objects.select_related('vendor', 'rider'), id=order_id), OrderDetailSerializer)
+
+@api_view(['POST'])
+def verify_order_pickup(request, order_id):
+    submitted_code = str(request.data.get('pickup_code', '')).strip()
+    with transaction.atomic():
+        order = get_object_or_404(Order.objects.select_for_update().select_related('vendor', 'rider'), id=order_id)
+        if order.status != Order.Status.ASSIGNED or order.rider_id is None:
+            return Response({'detail': 'Pickup can only be verified for an assigned order.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not submitted_code or not secrets.compare_digest(submitted_code, order.pickup_code):
+            return Response({'pickup_code': ['Invalid pickup code.']}, status=status.HTTP_400_BAD_REQUEST)
+        order.status = Order.Status.PICKED_UP
+        order.save(update_fields=['status', 'updated_at'])
+    return Response(OrderDetailSerializer(order, context={'request': request}).data)
 
 @api_view(['GET'])
 def current_pricing(request):

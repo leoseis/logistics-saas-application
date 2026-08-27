@@ -1,4 +1,6 @@
 from decimal import Decimal
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 from .models import Order, PricingConfiguration, Rider, Vendor
@@ -191,3 +193,72 @@ class EmptyDashboardAnalyticsTests(APITestCase):
             self.assertEqual(Decimal(response.data[field]), Decimal('0.00'))
         self.assertEqual(response.data['recent_orders'], [])
         self.assertEqual(len(response.data['revenue_trend']), 7)
+
+@override_settings(MEDIA_ROOT='/tmp/logistics-test-media')
+class PickupEvidenceTests(APITestCase):
+    def setUp(self):
+        self.vendor = Vendor.objects.create(name='Evidence Vendor', business_type='Retail', owner_name='Owner', phone='+2348201', email='evidence@example.com', address='Lagos', status=Vendor.Status.ACTIVE)
+        self.rider = Rider.objects.create(full_name='Evidence Rider', phone='+2348202', email='evidence-rider@example.com', status=Rider.Status.ON_DELIVERY)
+
+    def assigned_order(self, reference='PICKUP-001', **changes):
+        values = dict(reference=reference, vendor=self.vendor, rider=self.rider, pickup_address='A', delivery_address='B', recipient_name='Customer', recipient_phone='+2348203', status=Order.Status.ASSIGNED, weight_kg=None, delivery_fee=Decimal('1500.00'))
+        values.update(changes)
+        return Order.objects.create(**values)
+
+    def test_pickup_code_is_generated_automatically_and_unique(self):
+        first = self.assigned_order()
+        second = self.assigned_order(reference='PICKUP-002')
+        self.assertRegex(first.pickup_code, r'^\d{6}$')
+        self.assertNotEqual(first.pickup_code, second.pickup_code)
+
+    def test_frontend_cannot_control_pickup_code(self):
+        response = self.client.post('/api/orders/', {'reference':'PICKUP-POST', 'vendor':str(self.vendor.id), 'pickup_address':'A', 'delivery_address':'B', 'recipient_name':'Customer', 'recipient_phone':'+2348203', 'weight_kg':'1.00', 'pickup_code':'111111'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        order = Order.objects.get(pk=response.data['id'])
+        self.assertNotEqual(order.pickup_code, '111111')
+        self.assertNotIn('pickup_code', response.data)
+
+    def test_correct_code_verifies_and_changes_assigned_to_picked_up(self):
+        order = self.assigned_order()
+        response = self.client.post(f'/api/orders/{order.id}/verify-pickup/', {'pickup_code':order.pickup_code}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.PICKED_UP)
+
+    def test_incorrect_code_does_not_change_status(self):
+        order = self.assigned_order()
+        response = self.client.post(f'/api/orders/{order.id}/verify-pickup/', {'pickup_code':'000000' if order.pickup_code != '000000' else '999999'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['pickup_code'], ['Invalid pickup code.'])
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.ASSIGNED)
+
+    def test_invalid_lifecycle_states_cannot_verify(self):
+        for index, state in enumerate([Order.Status.DELIVERED, Order.Status.CANCELLED, Order.Status.PENDING], start=1):
+            order = self.assigned_order(reference=f'PICKUP-STATE-{index}', status=state, rider=None if state == Order.Status.PENDING else self.rider)
+            response = self.client.post(f'/api/orders/{order.id}/verify-pickup/', {'pickup_code':order.pickup_code}, format='json')
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_verification_cannot_be_reused(self):
+        order = self.assigned_order()
+        self.assertEqual(self.client.post(f'/api/orders/{order.id}/verify-pickup/', {'pickup_code':order.pickup_code}, format='json').status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.post(f'/api/orders/{order.id}/verify-pickup/', {'pickup_code':order.pickup_code}, format='json').status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_normal_status_patch_cannot_bypass_verification(self):
+        order = self.assigned_order()
+        response = self.client.patch(f'/api/orders/{order.id}/', {'status':Order.Status.PICKED_UP}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.ASSIGNED)
+
+    def test_package_image_can_be_uploaded_and_creation_without_image_still_works(self):
+        gif = b'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;'
+        image = SimpleUploadedFile('package.gif', gif, content_type='image/gif')
+        payload = {'reference':'PHOTO-001', 'vendor':str(self.vendor.id), 'pickup_address':'A', 'delivery_address':'B', 'recipient_name':'Customer', 'recipient_phone':'+2348203', 'weight_kg':'1.00', 'package_photo':image}
+        response = self.client.post('/api/orders/', payload, format='multipart')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn('/media/orders/packages/', response.data['package_photo'])
+        without_photo = {**payload, 'reference':'PHOTO-002'}
+        without_photo.pop('package_photo')
+        response = self.client.post('/api/orders/', without_photo, format='multipart')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
