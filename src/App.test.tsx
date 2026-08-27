@@ -5,20 +5,30 @@ import { App } from './App'
 beforeEach(()=>{localStorage.clear(); location.hash=''})
 afterEach(()=>cleanup())
 const response = (data:unknown) => Promise.resolve({ok:true,json:async()=>data})
+const analytics={total_orders:3,pending_orders:1,assigned_orders:0,picked_up_orders:0,delivered_orders:2,cancelled_orders:0,total_revenue:'12000.00',delivered_revenue:'12000.00',pending_revenue:'3000.00',average_order_value:'5000.00',total_weight_kg:'10.00',delivered_weight_kg:'8.00',average_order_weight_kg:'3.33',total_vendors:3,active_vendors:1,pending_vendors:1,inactive_vendors:1,total_riders:2,available_riders:1,riders_on_delivery:1,inactive_riders:0,recent_orders:[],revenue_trend:Array.from({length:7},(_,index)=>({date:`2026-08-${21+index}`,revenue:index===6?'12000.00':'0.00'}))}
 beforeEach(()=>{
  vi.stubGlobal('fetch', vi.fn((input:RequestInfo|URL)=>{
   const url=String(input)
   if(url.includes('dashboard/vendors')) return response({total_vendors:3,active_vendors:1,inactive_vendors:1,pending_vendors:1,pending:[]})
+  if(url.endsWith('/api/dashboard/')) return response(analytics)
   return response({count:1,next:null,previous:null,results:[{id:'vendor-1',name:'Maple & Main',business_type:'Electric',owner_name:'Ronald Richards',phone:'+234',email:'maple@example.test',address:'Lagos',status:'active',order_count:3}]})
  }))
 })
+test('loads live dashboard analytics',async()=>{
+ render(<App />)
+ expect(await screen.findByText('Delivered Revenue')).toBeInTheDocument()
+ expect(screen.getAllByText('₦12,000').length).toBeGreaterThan(0)
+ expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/dashboard/'),expect.any(Object))
+})
 test('loads vendors from the API', async()=>{
  render(<App />)
+ fireEvent.click(screen.getByText('Vendors'))
  expect(await screen.findByText('Maple & Main')).toBeInTheDocument()
  expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/vendors/'),expect.any(Object))
 })
 test('opens vendor details from a row action', async()=>{
  render(<App />)
+ fireEvent.click(screen.getByText('Vendors'))
  await screen.findByText('Maple & Main')
  fireEvent.click(screen.getByLabelText('Vendor actions'))
  fireEvent.click(screen.getByText('View details'))

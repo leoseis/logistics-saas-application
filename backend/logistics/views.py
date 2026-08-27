@@ -1,6 +1,10 @@
 from django.db import transaction
-from django.db.models import Count, Q
+from datetime import timedelta
+from decimal import Decimal
+from django.db.models import Avg, Count, DecimalField, Q, Sum
+from django.db.models.functions import Coalesce, TruncDate
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.pagination import PageNumberPagination
@@ -85,6 +89,74 @@ def current_pricing(request):
     if pricing is None:
         return Response({'detail': 'Delivery pricing is not configured.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     return Response(PricingConfigurationSerializer(pricing).data)
+
+@api_view(['GET'])
+def dashboard_analytics(request):
+    zero_money = Decimal('0.00')
+    money_field = DecimalField(max_digits=14, decimal_places=2)
+    orders = Order.objects.all()
+    order_counts = {row['status']: row['count'] for row in orders.values('status').annotate(count=Count('id'))}
+    reportable = orders.exclude(status=Order.Status.CANCELLED)
+    delivered = orders.filter(status=Order.Status.DELIVERED)
+    expected = orders.filter(status__in=[Order.Status.PENDING, Order.Status.ASSIGNED, Order.Status.PICKED_UP])
+    revenue = reportable.aggregate(
+        average=Coalesce(Avg('delivery_fee'), zero_money, output_field=money_field),
+    )
+    delivered_totals = delivered.aggregate(
+        revenue=Coalesce(Sum('delivery_fee'), zero_money, output_field=money_field),
+        weight=Coalesce(Sum('weight_kg'), zero_money, output_field=money_field),
+    )
+    expected_revenue = expected.aggregate(
+        revenue=Coalesce(Sum('delivery_fee'), zero_money, output_field=money_field),
+    )['revenue']
+    weight = reportable.aggregate(
+        total=Coalesce(Sum('weight_kg'), zero_money, output_field=money_field),
+        average=Coalesce(Avg('weight_kg'), zero_money, output_field=money_field),
+    )
+    vendor_counts = {row['status']: row['count'] for row in Vendor.objects.values('status').annotate(count=Count('id'))}
+    rider_counts = {row['status']: row['count'] for row in Rider.objects.values('status').annotate(count=Count('id'))}
+
+    today = timezone.localdate()
+    trend_start = today - timedelta(days=6)
+    trend_rows = delivered.filter(created_at__date__gte=trend_start).annotate(date=TruncDate('created_at')).values('date').annotate(
+        revenue=Coalesce(Sum('delivery_fee'), zero_money, output_field=money_field),
+    ).order_by('date')
+    revenue_by_date = {row['date']: row['revenue'] for row in trend_rows}
+    revenue_trend = [
+        {'date': (trend_start + timedelta(days=offset)).isoformat(), 'revenue': str(revenue_by_date.get(trend_start + timedelta(days=offset), zero_money))}
+        for offset in range(7)
+    ]
+    recent_orders = orders.select_related('vendor', 'rider')[:5]
+
+    return Response({
+        'total_orders': sum(order_counts.values()),
+        **{f'{status_value}_orders': order_counts.get(status_value, 0) for status_value in Order.Status.values},
+        # Revenue is earned only when an order is delivered. Expected revenue is reported separately.
+        'total_revenue': str(delivered_totals['revenue']),
+        'delivered_revenue': str(delivered_totals['revenue']),
+        'pending_revenue': str(expected_revenue),
+        'average_order_value': str(revenue['average']),
+        'total_weight_kg': str(weight['total']),
+        'delivered_weight_kg': str(delivered_totals['weight']),
+        'average_order_weight_kg': str(weight['average']),
+        'total_vendors': sum(vendor_counts.values()),
+        'active_vendors': vendor_counts.get(Vendor.Status.ACTIVE, 0),
+        'pending_vendors': vendor_counts.get(Vendor.Status.PENDING, 0),
+        'inactive_vendors': vendor_counts.get(Vendor.Status.INACTIVE, 0),
+        'total_riders': sum(rider_counts.values()),
+        'available_riders': rider_counts.get(Rider.Status.AVAILABLE, 0),
+        'riders_on_delivery': rider_counts.get(Rider.Status.ON_DELIVERY, 0),
+        'inactive_riders': rider_counts.get(Rider.Status.OFFLINE, 0),
+        'recent_orders': [{
+            'id': str(order.id), 'reference': order.reference,
+            'vendor': order.vendor.name, 'recipient': order.recipient_name,
+            'status': order.status, 'weight_kg': str(order.weight_kg) if order.weight_kg is not None else None,
+            'delivery_fee': str(order.delivery_fee),
+            'assigned_rider': order.rider.full_name if order.rider else None,
+            'created_at': order.created_at,
+        } for order in recent_orders],
+        'revenue_trend': revenue_trend,
+    })
 
 @api_view(['GET'])
 def vendor_dashboard(request):

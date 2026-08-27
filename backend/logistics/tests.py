@@ -148,3 +148,46 @@ class LogisticsApiTests(APITestCase):
         response = self.client.get('/api/pricing/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(Decimal(response.data['price_per_kg']), Decimal('1750.50'))
+
+class DashboardAnalyticsTests(APITestCase):
+    def setUp(self):
+        self.vendor = Vendor.objects.create(name='Analytics Vendor', business_type='Retail', owner_name='Owner', phone='+2348001', email='analytics@example.com', address='Lagos', status=Vendor.Status.ACTIVE)
+
+    def order(self, reference, status_value, fee):
+        return Order.objects.create(reference=reference, vendor=self.vendor, pickup_address='A', delivery_address='B', recipient_name='Customer', recipient_phone='+2348002', status=status_value, weight_kg=None, delivery_fee=fee, price_per_kg=None)
+
+    def test_revenue_status_and_average_analytics(self):
+        self.order('AN-DELIVERED', Order.Status.DELIVERED, Decimal('12000.00'))
+        self.order('AN-PENDING', Order.Status.PENDING, Decimal('6000.00'))
+        self.order('AN-CANCELLED', Order.Status.CANCELLED, Decimal('99000.00'))
+        response = self.client.get('/api/dashboard/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['total_orders'], 3)
+        self.assertEqual(response.data['delivered_orders'], 1)
+        self.assertEqual(response.data['pending_orders'], 1)
+        self.assertEqual(response.data['cancelled_orders'], 1)
+        self.assertEqual(Decimal(response.data['delivered_revenue']), Decimal('12000.00'))
+        self.assertEqual(Decimal(response.data['total_revenue']), Decimal('12000.00'))
+        self.assertEqual(Decimal(response.data['pending_revenue']), Decimal('6000.00'))
+        self.assertEqual(Decimal(response.data['average_order_value']), Decimal('9000.00'))
+
+    def test_vendor_and_rider_counts(self):
+        Vendor.objects.create(name='Pending Vendor', business_type='Retail', owner_name='Owner', phone='+2348003', email='pending@example.com', address='Lagos', status=Vendor.Status.PENDING)
+        Vendor.objects.create(name='Inactive Vendor', business_type='Retail', owner_name='Owner', phone='+2348004', email='inactive@example.com', address='Lagos', status=Vendor.Status.INACTIVE)
+        Rider.objects.create(full_name='Available Rider', phone='+2348101', email='available@example.com', status=Rider.Status.AVAILABLE)
+        Rider.objects.create(full_name='Busy Rider', phone='+2348102', email='busy@example.com', status=Rider.Status.ON_DELIVERY)
+        Rider.objects.create(full_name='Offline Rider', phone='+2348103', email='offline@example.com', status=Rider.Status.OFFLINE)
+        response = self.client.get('/api/dashboard/')
+        self.assertEqual((response.data['total_vendors'], response.data['active_vendors'], response.data['pending_vendors'], response.data['inactive_vendors']), (3, 1, 1, 1))
+        self.assertEqual((response.data['total_riders'], response.data['available_riders'], response.data['riders_on_delivery'], response.data['inactive_riders']), (3, 1, 1, 1))
+
+class EmptyDashboardAnalyticsTests(APITestCase):
+    def test_empty_database_returns_zero_values_and_seven_day_trend(self):
+        response = self.client.get('/api/dashboard/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for field in ['total_orders', 'pending_orders', 'assigned_orders', 'picked_up_orders', 'delivered_orders', 'cancelled_orders', 'total_vendors', 'total_riders']:
+            self.assertEqual(response.data[field], 0)
+        for field in ['total_revenue', 'delivered_revenue', 'pending_revenue', 'average_order_value', 'total_weight_kg', 'delivered_weight_kg', 'average_order_weight_kg']:
+            self.assertEqual(Decimal(response.data[field]), Decimal('0.00'))
+        self.assertEqual(response.data['recent_orders'], [])
+        self.assertEqual(len(response.data['revenue_trend']), 7)

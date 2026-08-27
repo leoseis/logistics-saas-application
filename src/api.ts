@@ -14,6 +14,15 @@ export type ApiRiderStatus=ApiRider['status']
 export type RiderInput={full_name:string;phone:string;email:string;status:ApiRiderStatus;rating:string}
 export type ApiFieldErrors = Record<string,string[]|string>
 export type VendorDashboard = { total_vendors:number; active_vendors:number; inactive_vendors:number; pending_vendors:number; pending:ApiVendor[] }
+export type DashboardRecentOrder = { id:string; reference:string; vendor:string; recipient:string; status:ApiOrderStatus; weight_kg:string|null; delivery_fee:string; assigned_rider:string|null; created_at:string }
+export type DashboardAnalytics = {
+ total_orders:number;pending_orders:number;assigned_orders:number;picked_up_orders:number;delivered_orders:number;cancelled_orders:number;
+ total_revenue:string;delivered_revenue:string;pending_revenue:string;average_order_value:string;
+ total_weight_kg:string;delivered_weight_kg:string;average_order_weight_kg:string;
+ total_vendors:number;active_vendors:number;pending_vendors:number;inactive_vendors:number;
+ total_riders:number;available_riders:number;riders_on_delivery:number;inactive_riders:number;
+ recent_orders:DashboardRecentOrder[];revenue_trend:{date:string;revenue:string}[]
+}
 
 const statusLabel: Record<ApiStatus, Status> = { active:'Active', inactive:'Inactive', pending:'Pending' }
 const initials = (name:string) => name.split(/\s+/).filter(Boolean).slice(0,2).map(word=>word[0]).join('').toUpperCase()
@@ -36,6 +45,7 @@ export function getVendors({page, query, status, signal}:{page:number;query:stri
  return request<Page<ApiVendor>>(`/vendors/?${params}`,signal).then(pageData=>({count:pageData.count,results:pageData.results.map(toVendor)}))
 }
 export function getVendorDashboard(signal?:AbortSignal){ return request<VendorDashboard>('/dashboard/vendors/',signal) }
+export function getDashboardAnalytics(signal?:AbortSignal){return request<DashboardAnalytics>('/dashboard/',signal)}
 export function getVendor(id:string, signal?:AbortSignal){ return request<ApiVendor>(`/vendors/${id}/`,signal).then(toVendor) }
 export function updateVendorStatus(id:string, status:ApiStatus){
  return request<ApiVendor>(`/vendors/${id}/`, undefined, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status}) }).then(toVendor)
