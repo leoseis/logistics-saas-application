@@ -1,4 +1,4 @@
-# Truelog Logistics Platform
+# LEE Logistics Platform
 
 A logistics administration prototype with a React/Vite dashboard and a Django REST Framework API. The backend owns vendors, riders, vehicles, and delivery orders; it exposes JSON endpoints designed for the dashboard and future client applications.
 
