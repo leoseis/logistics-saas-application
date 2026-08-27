@@ -1,6 +1,7 @@
+from decimal import Decimal
 from rest_framework import status
 from rest_framework.test import APITestCase
-from .models import Order, Rider, Vendor
+from .models import Order, PricingConfiguration, Rider, Vendor
 
 class LogisticsApiTests(APITestCase):
     def setUp(self):
@@ -101,3 +102,49 @@ class LogisticsApiTests(APITestCase):
         self.assertEqual(self.client.patch(f'/api/orders/{first.id}/', {'rider': str(rider.id)}, format='json').status_code, status.HTTP_200_OK)
         response = self.client.patch(f'/api/orders/{second.id}/', {'rider': str(rider.id)}, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def pricing_payload(self, reference='ORD-PRICE-01', **changes):
+        values = {'reference': reference, 'vendor': str(self.vendor.id), 'pickup_address': 'Marina',
+                  'delivery_address': 'Ikeja', 'recipient_name': 'Sam',
+                  'recipient_phone': '+234801', 'weight_kg': '8.00'}
+        values.update(changes)
+        return values
+
+    def test_calculates_delivery_fee_from_configured_rate(self):
+        response = self.client.post('/api/orders/', self.pricing_payload(), format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Decimal(response.data['price_per_kg']), Decimal('1500.00'))
+        self.assertEqual(Decimal(response.data['delivery_fee']), Decimal('12000.00'))
+
+    def test_calculates_decimal_weight(self):
+        response = self.client.post('/api/orders/', self.pricing_payload(weight_kg='2.75'), format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Decimal(response.data['delivery_fee']), Decimal('4125.00'))
+
+    def test_rejects_zero_and_negative_weight(self):
+        for index, weight in enumerate(['0', '-1'], start=1):
+            response = self.client.post('/api/orders/', self.pricing_payload(reference=f'ORD-BAD-{index}', weight_kg=weight), format='json')
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn('weight_kg', response.data)
+
+    def test_changing_weight_recalculates_fee_and_rate_snapshot(self):
+        created = self.client.post('/api/orders/', self.pricing_payload(weight_kg='5'), format='json')
+        PricingConfiguration.objects.create(price_per_kg=Decimal('2000.00'), is_active=True)
+        response = self.client.patch(f"/api/orders/{created.data['id']}/", {'weight_kg': '10'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(Decimal(response.data['price_per_kg']), Decimal('2000.00'))
+        self.assertEqual(Decimal(response.data['delivery_fee']), Decimal('20000.00'))
+
+    def test_frontend_fee_cannot_override_backend_calculation(self):
+        payload = self.pricing_payload(delivery_fee='1.00', price_per_kg='0.01')
+        response = self.client.post('/api/orders/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Decimal(response.data['delivery_fee']), Decimal('12000.00'))
+        patch = self.client.patch(f"/api/orders/{response.data['id']}/", {'delivery_fee': '1.00'}, format='json')
+        self.assertEqual(Decimal(patch.data['delivery_fee']), Decimal('12000.00'))
+
+    def test_current_pricing_endpoint_returns_active_rate(self):
+        PricingConfiguration.objects.create(price_per_kg=Decimal('1750.50'), is_active=True)
+        response = self.client.get('/api/pricing/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(Decimal(response.data['price_per_kg']), Decimal('1750.50'))

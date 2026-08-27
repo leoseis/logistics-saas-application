@@ -5,8 +5,8 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
-from .models import Order, Rider, Vehicle, Vendor
-from .serializers import OrderSerializer, RiderSerializer, VehicleSerializer, VendorSerializer
+from .models import Order, PricingConfiguration, Rider, Vehicle, Vendor
+from .serializers import OrderSerializer, PricingConfigurationSerializer, RiderSerializer, VehicleSerializer, VendorSerializer
 
 def paginated_response(request, queryset, serializer_class):
     paginator = PageNumberPagination()
@@ -78,6 +78,13 @@ def order_detail(request, order_id):
             serializer.save()
             return Response(serializer.data)
     return resource_detail(request, get_object_or_404(Order.objects.select_related('vendor', 'rider'), id=order_id), OrderSerializer)
+
+@api_view(['GET'])
+def current_pricing(request):
+    pricing = PricingConfiguration.current()
+    if pricing is None:
+        return Response({'detail': 'Delivery pricing is not configured.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return Response(PricingConfigurationSerializer(pricing).data)
 
 @api_view(['GET'])
 def vendor_dashboard(request):

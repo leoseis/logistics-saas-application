@@ -59,8 +59,8 @@ test('shows assigned-order transitions and marks an order as picked up',async()=
  expect(screen.getAllByText('Picked up').some(element=>element.classList.contains('badge'))).toBe(true)
 })
 test('creates an order with the selected vendor UUID',async()=>{
- const created={id:'order-new',reference:'ORD-NEW',vendor:'vendor-1',vendor_name:'Maple & Main',rider:null,rider_name:null,pickup_address:'Marina',delivery_address:'Ikeja',recipient_name:'Ada Okafor',recipient_phone:'+2348012345',status:'pending',delivery_fee:'1500.00',created_at:'2026-08-20T10:00:00Z',updated_at:'2026-08-20T10:00:00Z'}
- vi.mocked(fetch).mockImplementation((input:RequestInfo|URL,init?:RequestInit)=>{const url=String(input);if(url.includes('/vendors/?'))return response({count:1,next:null,previous:null,results:[{id:'vendor-1',name:'Maple & Main',status:'active'}]});if(url.includes('/riders/?'))return response({count:0,next:null,previous:null,results:[]});if(url.endsWith('/api/orders/')&&init?.method==='POST')return response(created);if(url.includes('/orders/'))return response({count:0,next:null,previous:null,results:[]});return response({count:0,next:null,previous:null,results:[]})})
+ const created={id:'order-new',reference:'ORD-NEW',vendor:'vendor-1',vendor_name:'Maple & Main',rider:null,rider_name:null,pickup_address:'Marina',delivery_address:'Ikeja',recipient_name:'Ada Okafor',recipient_phone:'+2348012345',status:'pending',weight_kg:'1.00',price_per_kg:'1500.00',delivery_fee:'1500.00',created_at:'2026-08-20T10:00:00Z',updated_at:'2026-08-20T10:00:00Z'}
+ vi.mocked(fetch).mockImplementation((input:RequestInfo|URL,init?:RequestInit)=>{const url=String(input);if(url.includes('/vendors/?'))return response({count:1,next:null,previous:null,results:[{id:'vendor-1',name:'Maple & Main',status:'active'}]});if(url.includes('/riders/?'))return response({count:0,next:null,previous:null,results:[]});if(url.includes('/pricing/'))return response({price_per_kg:'1500.00'});if(url.endsWith('/api/orders/')&&init?.method==='POST')return response(created);if(url.includes('/orders/'))return response({count:0,next:null,previous:null,results:[]});return response({count:0,next:null,previous:null,results:[]})})
  render(<App />)
  fireEvent.click(screen.getByText('Orders'))
  fireEvent.click(await screen.findByText('Add Order'))
@@ -71,10 +71,12 @@ test('creates an order with the selected vendor UUID',async()=>{
  fireEvent.change(screen.getByLabelText('Recipient phone'),{target:{value:'+2348012345'}})
  fireEvent.change(screen.getByLabelText('Pickup location'),{target:{value:'Marina'}})
  fireEvent.change(screen.getByLabelText('Delivery destination'),{target:{value:'Ikeja'}})
- fireEvent.change(screen.getByLabelText('Delivery fee (NGN)'),{target:{value:'1500'}})
+ fireEvent.change(screen.getByLabelText('Package Weight (kg)'),{target:{value:'1'}})
  fireEvent.click(screen.getByRole('button',{name:'Create order'}))
  expect(await screen.findByText('ORD-NEW was created successfully.')).toBeInTheDocument()
  expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/orders/'),expect.objectContaining({method:'POST',body:expect.stringContaining('"vendor":"vendor-1"')}))
+ const createCall=vi.mocked(fetch).mock.calls.find(([,init])=>init?.method==='POST')
+ expect(createCall?.[1]?.body).not.toContain('delivery_fee')
 })
 test('navigates to riders and opens rider details',async()=>{
  const rider={id:'rider-1',full_name:'Tola Driver',phone:'+23480777',email:'tola@example.com',status:'available',rating:'4.8',active_order_count:2,created_at:'2026-08-20T10:00:00Z',updated_at:'2026-08-20T10:00:00Z'}

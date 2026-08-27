@@ -1,6 +1,11 @@
 from django.db import transaction
 from rest_framework import serializers
-from .models import Order, Rider, Vehicle, Vendor
+from .models import Order, PricingConfiguration, Rider, Vehicle, Vendor
+
+class PricingConfigurationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PricingConfiguration
+        fields = ['price_per_kg']
 
 class VendorSerializer(serializers.ModelSerializer):
     order_count = serializers.IntegerField(read_only=True)
@@ -36,8 +41,8 @@ class OrderSerializer(serializers.ModelSerializer):
     rider_status = serializers.CharField(source='rider.status', read_only=True)
     class Meta:
         model = Order
-        fields = ['id', 'reference', 'vendor', 'vendor_name', 'rider', 'rider_name', 'rider_phone', 'rider_status', 'pickup_address', 'delivery_address', 'recipient_name', 'recipient_phone', 'status', 'delivery_fee', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'vendor_name', 'rider_name', 'rider_phone', 'rider_status', 'created_at', 'updated_at']
+        fields = ['id', 'reference', 'vendor', 'vendor_name', 'rider', 'rider_name', 'rider_phone', 'rider_status', 'pickup_address', 'delivery_address', 'recipient_name', 'recipient_phone', 'status', 'weight_kg', 'price_per_kg', 'delivery_fee', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'vendor_name', 'rider_name', 'rider_phone', 'rider_status', 'price_per_kg', 'delivery_fee', 'created_at', 'updated_at']
     def validate(self, attrs):
         vendor = attrs.get('vendor', getattr(self.instance, 'vendor', None))
         rider = attrs.get('rider', getattr(self.instance, 'rider', None))
@@ -51,10 +56,23 @@ class OrderSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'rider': 'Only an available rider can be assigned to an order.'})
         if status in [Order.Status.ASSIGNED, Order.Status.PICKED_UP] and not rider:
             raise serializers.ValidationError({'rider': 'A rider is required once an order is assigned.'})
+        weight = attrs.get('weight_kg', getattr(self.instance, 'weight_kg', None))
+        if self.instance is None and weight is None:
+            raise serializers.ValidationError({'weight_kg': 'Package weight is required.'})
         return attrs
+
+    def apply_pricing(self, validated_data):
+        if self.instance is None or 'weight_kg' in validated_data:
+            pricing = PricingConfiguration.current()
+            if pricing is None:
+                raise serializers.ValidationError({'weight_kg': 'Delivery pricing is not configured.'})
+            validated_data['price_per_kg'] = pricing.price_per_kg
+            validated_data['delivery_fee'] = validated_data['weight_kg'] * pricing.price_per_kg
+        return validated_data
 
     @transaction.atomic
     def create(self, validated_data):
+        validated_data = self.apply_pricing(validated_data)
         rider = validated_data.get('rider')
         if rider:
             rider = Rider.objects.select_for_update().get(pk=rider.pk)
@@ -69,6 +87,7 @@ class OrderSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        validated_data = self.apply_pricing(validated_data)
         order = Order.objects.select_for_update().select_related('rider').get(pk=instance.pk)
         old_rider = order.rider
         new_rider = validated_data.get('rider', old_rider)
